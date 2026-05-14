@@ -92,7 +92,6 @@ class LabCommunity(Community, PeerObserver):
         print("success =", payload.success)
         print("message =", payload.message)
 
-
 async def main() -> None:
     builder = ConfigBuilder().clear_keys().clear_overlays()
 
@@ -113,7 +112,16 @@ async def main() -> None:
     )
 
     await ipv8.start()
+
+    overlay = ipv8.get_overlay(LabCommunity)
+    print("IPv8 started.")
+
+    my_peer = overlay.my_peer
+    public_bytes = my_peer.public_key.key_to_bin()
+    print(f"Connecting With Public Key: {public_bytes.hex()}")
+
     await run_forever()
+
 
 
 if __name__ == "__main__":

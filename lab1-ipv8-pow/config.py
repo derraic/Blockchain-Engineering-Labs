@@ -1,0 +1,40 @@
+COMMUNITY_ID = bytes.fromhex("4c61623247726f75705369676e696e6732303236")
+
+SERVER_PUBLIC_KEY = bytes.fromhex(
+    "4c69624e61434c504b3a82e33614a342774e084af80835838d6dbdb64a537d3ddb6c1d82011a7f101553cda40cf5fa0e0fc23abd0a9c4f81322282c5b34566f6b8401f5f683031e60c96"
+)
+
+DARIAN_KEY = bytes.fromhex(
+    "4c69624e61434c504b3adc31a700de7e0d53fc6c3cfc52e2b8122f35d74def4aaf55b9ccdf81116f5f4f7d8c15de980916c0e953a4f23423ad1ff6abb34dbae4ac3c12bfdb76c0f4e81c"
+)
+
+JAYRAN_KEY = bytes.fromhex(
+    "4c69624e61434c504b3a70597fc8337cce9c703a98ae454aef1ba9a0e9ab61a3b84933a606d1ec44466197b54b27c07d167ddfc134d03247b8290a6013d0b4ccc07817272e846aa51e50"
+)
+
+YVES_KEY = bytes.fromhex(
+    "4c69624e61434c504b3aea1ebe2bb45bbaef6fd358df15349cf7494ea4c3079bd09876d867e0cd339d5c341269531ea65b0f99daf123b585ebcef5c21d9e17c54d755e5cc5916c024ce4"
+)
+
+MY_KEY = DARIAN_KEY
+MY_NAME = "Darian"
+
+GROUP_ID = bytes.fromhex("586f73fc3c9b8936")
+
+MEMBER_KEYS = [
+    DARIAN_KEY,
+    JAYRAN_KEY,
+    YVES_KEY,
+]
+
+KEY_NAMES = {
+    DARIAN_KEY: "Darian",
+    JAYRAN_KEY: "Jayran",
+    YVES_KEY: "Yves",
+}
+
+TEAMMATE_KEYS = {
+    key: name
+    for key, name in KEY_NAMES.items()
+    if key != MY_KEY
+}
