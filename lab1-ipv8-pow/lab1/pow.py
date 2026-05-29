@@ -1,33 +1,38 @@
 import hashlib
 import json
-import os
 import time
+from pathlib import Path
 
-email = "dajsamsoedien@tudelft.nl"
-utf8_email = email.encode("utf-8")
-utf8_newLine = "\n".encode("utf-8")
-repo_link = "https://github.com/derraic/Blockchain-Engineering-Labs"
-utf8_repo_link = repo_link.encode("utf-8")
+EMAIL = "dajsamsoedien@tudelft.nl"
+REPO_URL = "https://github.com/derraic/Blockchain-Engineering-Labs"
 
-STATE_FILE = "pow_state.json"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+STATE_FILE = REPO_ROOT / "pow_state.json"
 SAVE_EVERY = 100_000
+MAX_NONCE = 2**63 - 1
 
-combination = utf8_email + utf8_newLine + utf8_repo_link + utf8_newLine
+POW_STRING = f"{EMAIL}\n{REPO_URL}\n".encode("utf-8")
 
-def save_state(state):
+
+def save_state(state: dict) -> None:
     with open(STATE_FILE, "w") as f:
         json.dump(state, f, indent=2)
 
-def is_valid_pow(digest):
-    return (
-        digest[0] == 0
-        and digest[1] == 0
-        and digest[2] == 0
-        and digest[3] < 16
-    )
 
-def load_state():
-    if not os.path.exists(STATE_FILE):
+def is_valid_pow(string: bytes) -> bool:
+    if string[0] != 0:
+        return False
+    if string[1] != 0:
+        return False
+    if string[2] != 0:
+        return False
+    if string[3] >= 16:
+        return False
+    return True
+
+
+def load_state() -> dict:
+    if not STATE_FILE.exists():
         return {
             "next_nonce": 0,
             "found": False,
@@ -38,43 +43,52 @@ def load_state():
     with open(STATE_FILE, "r") as f:
         return json.load(f)
 
-#persist and longer range maybe do a time limit and keep track of the last nonce tried and start from there if the time limit is reached
 
-state = load_state()
-
-if state["found"]:
-    print("Already found:")
-    print("Nonce:", state["nonce"])
-    print("Hash:", state["hash"])
-    exit()
-
-nonce = state["next_nonce"]
-start_time = time.time()
-
-while nonce <= 2**63 - 1:
+def check_nonce(nonce: int) -> bytes:
     nonce_bytes = nonce.to_bytes(8, byteorder="big", signed=False)
-    hash_input = combination + nonce_bytes
-    hash_output = hashlib.sha256(hash_input).digest()
-    if is_valid_pow(hash_output):
-        state = {
-            "next_nonce": nonce + 1,
-            "found": True,
-            "nonce": nonce,
-            "hash": hash_output.hex(),
-            "email": email,
-            "repo_url": repo_link,
-        }
-        save_state(state)
+    return hashlib.sha256(POW_STRING + nonce_bytes).digest()
 
-        print("Found!")
-        print("Nonce:", nonce)
-        print("Hash:", hash_output.hex())
-        break
 
-    if nonce % SAVE_EVERY == 0:
-        state["next_nonce"] = nonce + 1
-        save_state(state)
+def main() -> None:
+    state = load_state()
 
-        elapsed = time.time() - start_time
-        print(f"Tried up to nonce {nonce}, elapsed {elapsed:.1f}s")
-    nonce += 1
+    if state["found"]:
+        print("already found")
+        print("nonce:", state["nonce"])
+        print("hash:", state["hash"])
+        return
+
+    nonce = state["next_nonce"]
+    start_time = time.time()
+
+    while nonce <= MAX_NONCE:
+        hash_string = check_nonce(nonce)
+
+        if is_valid_pow(hash_string):
+            state = {
+                "next_nonce": nonce + 1,
+                "found": True,
+                "nonce": nonce,
+                "hash": hash_string.hex(),
+                "email": EMAIL,
+                "repo_url": REPO_URL,
+            }
+            save_state(state)
+
+            print("found")
+            print("nonce:", nonce)
+            print("hash:", hash_string.hex())
+            return
+
+        if nonce % SAVE_EVERY == 0:
+            state["next_nonce"] = nonce + 1
+            save_state(state)
+
+            elapsed = time.time() - start_time
+            print(f"tried {nonce}, {elapsed:.1f}s")
+
+        nonce += 1
+
+
+if __name__ == "__main__":
+    main()

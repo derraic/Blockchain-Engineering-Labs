@@ -1,4 +1,6 @@
 from asyncio import run
+from pathlib import Path
+
 from ipv8.community import Community, CommunitySettings
 from ipv8.configuration import ConfigBuilder, Strategy, WalkerDefinition, default_bootstrap_defs
 from ipv8.lazy_community import lazy_wrapper
@@ -14,6 +16,7 @@ GITHUB_URL = "https://github.com/derraic/Blockchain-Engineering-Labs"
 NONCE = 45573537
 
 COMMUNITY_ID = bytes.fromhex("2c1cc6e35ff484f99ebdfb6108477783c0102881")
+KEY_FILE = Path(__file__).resolve().parents[1] / "lab_identity.pem"
 
 server_public_key = bytes.fromhex("4c69624e61434c504b3a86b23934a28d669c390e2d1fc0b0870706c4591cc0cb178bc5a811da6d87d27ef319b2638ef60cc8d119724f4c53a1ebfad919c3ac4136c501ce5c09364e0ebb")
 
@@ -48,7 +51,7 @@ class LabCommunity(Community, PeerObserver):
 
     def on_peer_added(self, peer: Peer) -> None:
         if self.is_server(peer):
-            print("Found server peer")
+            print("server found")
             self.send_submission(peer)
 
     def on_peer_removed(self, peer: Peer) -> None:
@@ -60,11 +63,11 @@ class LabCommunity(Community, PeerObserver):
 
         for peer in self.get_peers():
             if self.is_server(peer):
-                print("Found server peer")
+                print("server found")
                 self.send_submission(peer)
                 return
 
-        print("Serve not foud yet. Known peers:", len(self.get_peers()))
+        print("no server yet, peers:", len(self.get_peers()))
 
     def is_server(self, peer: Peer) -> bool:
         return peer.public_key.key_to_bin() == server_public_key
@@ -75,27 +78,27 @@ class LabCommunity(Community, PeerObserver):
 
         self.submitted = True
 
-        print("Sending submission")
-        print("Email:", EMAIL)
-        print("GitHub URL:", GITHUB_URL)
-        print("Nonce:", NONCE)
+        print("send")
+        print("email:", EMAIL)
+        print("repo:", GITHUB_URL)
+        print("nonce:", NONCE)
 
         self.ez_send(peer, SubmissionPayload(EMAIL, GITHUB_URL, NONCE))
 
     @lazy_wrapper(ResponsePayload)
     def on_response(self, peer: Peer, payload: ResponsePayload) -> None:
         if not self.is_server(peer):
-            print("Ignoring response frm non server peer:", peer)
+            print("ignre non server response:", peer)
             return
 
-        print("Server response:")
-        print("success =", payload.success)
+        print("server response")
+        print("succes =", payload.success)
         print("message =", payload.message)
 
 async def main() -> None:
     builder = ConfigBuilder().clear_keys().clear_overlays()
 
-    builder.add_key("lab_key", "curve25519", "lab_identity.pem")
+    builder.add_key("lab_key", "curve25519", str(KEY_FILE))
 
     builder.add_overlay(
         "LabCommunity",
@@ -114,11 +117,11 @@ async def main() -> None:
     await ipv8.start()
 
     overlay = ipv8.get_overlay(LabCommunity)
-    print("IPv8 started.")
+    print("ipv8 started")
 
     my_peer = overlay.my_peer
     public_bytes = my_peer.public_key.key_to_bin()
-    print(f"Connecting With Public Key: {public_bytes.hex()}")
+    print(f"my key: {public_bytes.hex()}")
 
     await run_forever()
 
@@ -126,6 +129,3 @@ async def main() -> None:
 
 if __name__ == "__main__":
     run(main())
-
-
-        

@@ -1,5 +1,11 @@
 from asyncio import run
+from pathlib import Path
+import sys
 from time import monotonic
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from ipv8.community import Community, CommunitySettings
 from ipv8.configuration import ConfigBuilder, Strategy, WalkerDefinition, default_bootstrap_defs
@@ -16,7 +22,6 @@ from lab2.config import (
     MEMBER_KEYS,
     TEAMMATE_KEYS,
 )
-
 from lab2.payloads import (
     ChallengeRequestPayload,
     ChallengeResponsePayload,
@@ -27,6 +32,9 @@ from lab2.payloads import (
     SignatureBundlePayload,
     RoundResultPayload,
 )
+
+
+KEY_FILE = REPO_ROOT / "lab_identity.pem"
 
 
 class Lab2Community(Community, PeerObserver):
@@ -42,8 +50,6 @@ class Lab2Community(Community, PeerObserver):
 
         self.server_peer: Peer | None = None
         self.teammate_peers: dict[bytes, Peer] = {}
-
-        self.last_ready_status = None
 
         self.registration_sent = False
         self.group_id: str | None = None
@@ -64,8 +70,6 @@ class Lab2Community(Community, PeerObserver):
 
         self.completed_rounds: set[int] = set()
 
-        self.responded_to_nonce_keys: set[tuple[int, bytes]] = set()
-
         self.add_message_handler(RegisterResponsePayload, self.on_register_response)
         self.add_message_handler(ChallengeResponsePayload, self.on_challenge_response)
         self.add_message_handler(NonceToSign, self.on_nonce_to_sign)
@@ -77,16 +81,9 @@ class Lab2Community(Community, PeerObserver):
 
         my_actual_key = self.my_peer.public_key.key_to_bin()
 
-        # print("started")
-        # print(my_actual_key.hex())
-
         if my_actual_key != MY_KEY:
-            # print("key mismatch")
-            # print(MY_KEY.hex())
-            # print(my_actual_key.hex())
             return
 
-        self.register_task("check_status", self.check_status, interval=1.0, delay=0.0)
         self.register_task("try_register_group", self.try_register_group, interval=0.2, delay=0.0)
         self.register_task("try_start_round", self.try_start_round, interval=0.2, delay=0.0)
         self.register_task("retry_active_round", self.retry_active_round, interval=0.15, delay=0.0)
@@ -96,13 +93,11 @@ class Lab2Community(Community, PeerObserver):
 
         if key == SERVER_PUBLIC_KEY:
             self.server_peer = peer
-            # print("found server")
             self.try_register_group()
             self.try_start_round()
 
         elif key in TEAMMATE_KEYS:
             self.teammate_peers[key] = peer
-            # print(f"found {TEAMMATE_KEYS[key]}")
             self.try_register_group()
             self.try_start_round()
 
@@ -111,31 +106,9 @@ class Lab2Community(Community, PeerObserver):
 
         if key == SERVER_PUBLIC_KEY:
             self.server_peer = None
-            # print("server left")
 
         elif key in self.teammate_peers:
-            # print(f"{TEAMMATE_KEYS[key]} left")
             del self.teammate_peers[key]
-
-    def check_status(self) -> None:
-        found_server = self.server_peer is not None
-
-        found_teammates = sum(1 for key in self.expected_teammates if key in self.teammate_peers)
-        total_teammates = len(self.expected_teammates)
-
-        ready = found_server and found_teammates == total_teammates
-        status = (found_server, found_teammates, ready)
-
-        if status == self.last_ready_status:
-            return
-
-        self.last_ready_status = status
-
-        #print(
-        #    f"Status: server={found_server}, "
-        #    f"teammates={found_teammates}/{total_teammates}, "
-        #    f"ready={ready}"
-        #)
 
     def all_peers_ready(self) -> bool:
         return (
@@ -170,8 +143,6 @@ class Lab2Community(Community, PeerObserver):
         self.registration_sent = True
         self.last_registration_send_time = now
 
-        # print("register group")
-
         self.ez_send(
             self.server_peer,
             RegisterPayload(
@@ -184,18 +155,11 @@ class Lab2Community(Community, PeerObserver):
     @lazy_wrapper(RegisterResponsePayload)
     def on_register_response(self, peer: Peer, payload: RegisterResponsePayload) -> None:
         if peer.public_key.key_to_bin() != SERVER_PUBLIC_KEY:
-            #print("Ignoring registration response from non-server peer.")
             return
-
-        #print("Registration response:")
-        #print("  success:", payload.success)
-        #print("  group_id:", payload.group_id)
-        #print("  message:", payload.message)
 
         if payload.success:
             self.group_id = payload.group_id
             self.try_start_round()
-            #print("Group registration done.")
         else:
             self.registration_sent = False
 
@@ -236,7 +200,6 @@ class Lab2Community(Community, PeerObserver):
     @lazy_wrapper(ChallengeResponsePayload)
     def on_challenge_response(self, peer: Peer, payload: ChallengeResponsePayload) -> None:
         if peer.public_key.key_to_bin() != SERVER_PUBLIC_KEY:
-            #print("Ignoring challenge response from non-server peer.")
             return
 
         if self.protocol_done:
@@ -274,8 +237,6 @@ class Lab2Community(Community, PeerObserver):
     def send_nonce_to_teammates(self, nonce: bytes, round_number: int) -> None:
         self.last_nonce_send_time_by_round[round_number] = monotonic()
 
-        # print("send nonce")
-
         for teammate_key in self.expected_teammates:
             teammate_peer = self.teammate_peers.get(teammate_key)
 
@@ -309,8 +270,6 @@ class Lab2Community(Community, PeerObserver):
             return
 
         self.last_nonce_send_time_by_round[round_number] = now
-
-        # print("resend nonce")
 
         for teammate_key in missing_teammates:
             teammate_peer = self.teammate_peers.get(teammate_key)
@@ -358,7 +317,6 @@ class Lab2Community(Community, PeerObserver):
         sender_key = peer.public_key.key_to_bin()
 
         if sender_key not in self.member_key_set:
-            #print("Ignoring NonceToSign from unknown sender.")
             return
 
         nonce = payload.nonce
@@ -374,12 +332,7 @@ class Lab2Community(Community, PeerObserver):
         if self.am_i_coordinator_for_round(round_number):
             return
 
-        nonce_key = (round_number, nonce)
-        self.responded_to_nonce_keys.add(nonce_key)
-
         signature = self.sign_nonce(nonce)
-
-        # print("send sig")
 
         self.ez_send(
             peer,
@@ -396,7 +349,6 @@ class Lab2Community(Community, PeerObserver):
         signature = payload.signature
 
         if signer_key not in self.member_key_set:
-            #print("Ignoring signature from unknown peer.")
             return
 
         if round_number != self.my_coordinator_round:
@@ -407,8 +359,6 @@ class Lab2Community(Community, PeerObserver):
 
         if round_number in self.completed_rounds:
             return
-
-        # print("sig received")
 
         self.signatures_by_round.setdefault(round_number, {})
         self.signatures_by_round[round_number][signer_key] = signature
@@ -448,8 +398,6 @@ class Lab2Community(Community, PeerObserver):
         sig2 = signatures[self.member_keys[1]]
         sig3 = signatures[self.member_keys[2]]
 
-        # print(f"submit round {round_number}")
-
         self.ez_send(
             self.server_peer,
             SignatureBundlePayload(
@@ -464,21 +412,14 @@ class Lab2Community(Community, PeerObserver):
     @lazy_wrapper(RoundResultPayload)
     def on_round_result(self, peer: Peer, payload: RoundResultPayload) -> None:
         if peer.public_key.key_to_bin() != SERVER_PUBLIC_KEY:
-            #print("Ignoring round result from non-server peer.")
             return
 
-        # print(payload.rounds_completed)
-        # print(payload.message)
-
-        if payload.round_number > 0:
+        if payload.success and payload.round_number > 0:
             self.completed_rounds.add(payload.round_number)
             self.nonce_by_round.pop(payload.round_number, None)
             self.signatures_by_round.pop(payload.round_number, None)
-            self.responded_to_nonce_keys = {
-                key for key in self.responded_to_nonce_keys if key[0] != payload.round_number
-            }
 
-        if payload.round_number == self.current_round:
+        if payload.success and payload.round_number == self.current_round:
             self.current_round = None
             self.current_nonce = None
 
@@ -506,7 +447,7 @@ class Lab2Community(Community, PeerObserver):
 async def main() -> None:
     builder = ConfigBuilder().clear_keys().clear_overlays()
 
-    builder.add_key("lab_key", "curve25519", "lab_identity.pem")
+    builder.add_key("lab_key", "curve25519", str(KEY_FILE))
 
     builder.add_overlay(
         "Lab2Community",
