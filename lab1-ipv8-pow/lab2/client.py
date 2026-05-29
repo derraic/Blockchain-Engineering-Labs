@@ -9,7 +9,7 @@ from ipv8.peerdiscovery.network import PeerObserver
 from ipv8.util import run_forever
 from ipv8_service import IPv8
 
-from config import (
+from lab2.config import (
     COMMUNITY_ID,
     SERVER_PUBLIC_KEY,
     MY_KEY,
@@ -17,7 +17,7 @@ from config import (
     TEAMMATE_KEYS,
 )
 
-from payloads import (
+from lab2.payloads import (
     ChallengeRequestPayload,
     ChallengeResponsePayload,
     RegisterPayload,
