@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from pathlib import Path
 
 logging.getLogger("LabCommunity").setLevel(logging.CRITICAL)
 
@@ -14,6 +15,7 @@ SERVER_PUBLIC_KEY_HEX = "4c69624e61434c504b3ae3fc099fb56ca3b5e1de9a1c843387f2acd
 MEMBER_1_PUBLIC_KEY_HEX = "4c69624e61434c504b3adc31a700de7e0d53fc6c3cfc52e2b8122f35d74def4aaf55b9ccdf81116f5f4f7d8c15de980916c0e953a4f23423ad1ff6abb34dbae4ac3c12bfdb76c0f4e81c" #Darian(ME)
 MEMBER_2_PUBLIC_KEY_HEX = "4c69624e61434c504b3a70597fc8337cce9c703a98ae454aef1ba9a0e9ab61a3b84933a606d1ec44466197b54b27c07d167ddfc134d03247b8290a6013d0b4ccc07817272e846aa51e50" # Jayran
 MEMBER_3_PUBLIC_KEY_HEX = "4c69624e61434c504b3aea1ebe2bb45bbaef6fd358df15349cf7494ea4c3079bd09876d867e0cd339d5c341269531ea65b0f99daf123b585ebcef5c21d9e17c54d755e5cc5916c024ce4" # Yves
+KEY_FILE = Path(__file__).resolve().parents[1] / "lab_identity.pem"
 
 @vp_compile
 class SubmitTransactionPayload(VariablePayload):
@@ -150,7 +152,7 @@ async def main():
     builder.add_key(
         "mynode",
         "curve25519",
-        "key.pem"
+        str(KEY_FILE)
     )
 
     builder.add_overlay(
