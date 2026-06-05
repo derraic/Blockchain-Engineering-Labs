@@ -4,6 +4,7 @@ from ipv8.peer import Peer
 from ipv8.peerdiscovery.network import PeerObserver
 
 from lab3.chain.blockchain import Blockchain
+from lab3.chain.miner import Miner
 from lab3.chain.transaction import Transaction
 from lab3.config import (
     BLOCKCHAIN_COMMUNITY_ID,
@@ -11,6 +12,8 @@ from lab3.config import (
     GROUP_ID,
     KEY_NAMES,
     MEMBER_KEYS,
+    MINING_DIFFICULTY,
+    MINING_INTERVAL_SECONDS,
     MY_KEY,
     MY_NAME,
     SERVER_PUBLIC_KEY,
@@ -41,6 +44,7 @@ class BlockchainCommunity(Community, PeerObserver):
         self.teammate_peers: dict[bytes, Peer] = {}
         self.all_teammates_found_logged = False
         self.blockchain = Blockchain()
+        self.miner = Miner(self.blockchain, difficulty=MINING_DIFFICULTY)
 
         if ENABLE_SERVER_HANDLERS:
             self.add_message_handler(SubmitTransactionPayload, self.on_submit_transaction)
@@ -56,6 +60,11 @@ class BlockchainCommunity(Community, PeerObserver):
         print(f"Blockchain community started for {MY_NAME}", flush=True)
         if not ENABLE_SERVER_HANDLERS:
             print("Server blockchain handlers disabled for peer discovery test", flush=True)
+        print(
+            "Mining enabled: "
+            f"interval={MINING_INTERVAL_SECONDS}s, difficulty={MINING_DIFFICULTY}",
+            flush=True,
+        )
         print(
             "Looking for teammates in blockchain community: "
             f"{', '.join(KEY_NAMES[key] for key in self.expected_teammates)}",
@@ -75,6 +84,13 @@ class BlockchainCommunity(Community, PeerObserver):
             self.report_peer_discovery_status,
             interval=5.0,
             delay=1.0,
+        )
+
+        self.register_task(
+            "mine_next_block",
+            self.mine_next_block,
+            interval=MINING_INTERVAL_SECONDS,
+            delay=MINING_INTERVAL_SECONDS,
         )
 
     def on_peer_added(self, peer: Peer) -> None:
@@ -154,6 +170,28 @@ class BlockchainCommunity(Community, PeerObserver):
             "Peer discovery status: "
             f"found={found_names or ['none']}, "
             f"missing={missing_names or ['none']}",
+            flush=True,
+        )
+
+    async def mine_next_block(self) -> None:
+        result = await self.miner.mine_next_block_threaded()
+        if result is None:
+            return
+
+        if not result.appended:
+            print(
+                "Mined block was not appended to local chain "
+                "(tip changed while mining)",
+                flush=True,
+            )
+            return
+
+        print(
+            "Mined block: "
+            f"height={result.new_height}, "
+            f"hash={result.block.block_hash().hex()}, "
+            f"txs={result.transaction_count}, "
+            f"mempool={self.blockchain.mempool_size()}",
             flush=True,
         )
 

@@ -33,6 +33,14 @@ class Blockchain:
     def has_transaction_in_mempool(self, tx_hash: bytes) -> bool:
         return self.mempool.contains(tx_hash)
 
+    def has_transaction_in_chain(self, tx_hash: bytes) -> bool:
+        for block in self.chain:
+            for tx in block.transactions:
+                if tx.tx_hash() == tx_hash:
+                    return True
+
+        return False
+
     def accept_transaction(self, tx: Transaction) -> tuple[bool, bytes, str]:
         tx_hash = tx.tx_hash()
 
@@ -48,8 +56,12 @@ class Blockchain:
     def get_mempool_transactions(self) -> list[Transaction]:
         return self.mempool.all_transactions()
 
-    def get_transactions_for_block(self, limit: int | None = None) -> list[Transaction]:
-        return self.mempool.transactions_for_block(limit)
+    def get_transactions_for_block(self) -> list[Transaction]:
+        return [
+            tx
+            for tx in self.mempool.all_transactions()
+            if not self.has_transaction_in_chain(tx.tx_hash())
+        ]
 
     def mempool_size(self) -> int:
         return len(self.mempool)

@@ -13,6 +13,7 @@ from lab3.chain.bytes import (
     u64_be,
 )
 from lab3.chain.mempool import Mempool
+from lab3.chain.miner import Miner, MiningJob, MiningResult
 from lab3.chain.pow import (
     BLOCK_DIFFICULTY,
     count_leading_zero_bits,
@@ -29,6 +30,9 @@ __all__ = [
     "BlockHeader",
     "Blockchain",
     "Mempool",
+    "Miner",
+    "MiningJob",
+    "MiningResult",
     "Transaction",
     "compute_txs_hash",
     "count_leading_zero_bits",

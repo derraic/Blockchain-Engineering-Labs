@@ -94,6 +94,26 @@ class BlockchainTests(unittest.TestCase):
         self.assertEqual(blockchain.height(), 1)
         self.assertFalse(blockchain.has_transaction_in_mempool(included_tx.tx_hash()))
         self.assertTrue(blockchain.has_transaction_in_mempool(pending_tx.tx_hash()))
+        self.assertTrue(blockchain.has_transaction_in_chain(included_tx.tx_hash()))
+
+    def test_get_transactions_for_block_excludes_confirmed_transactions(self) -> None:
+        blockchain = Blockchain()
+        confirmed_tx = make_tx(b"confirmed")
+        pending_tx = make_tx(b"pending")
+        blockchain.add_transaction(confirmed_tx)
+        blockchain.add_transaction(pending_tx)
+
+        block = mine_block(
+            prev_hash=blockchain.tip_hash(),
+            transactions=[confirmed_tx],
+            timestamp=1,
+            difficulty=4,
+        )
+        self.assertTrue(blockchain.append_block(block))
+
+        blockchain.add_transaction(confirmed_tx)
+
+        self.assertEqual(blockchain.get_transactions_for_block(), [pending_tx])
 
     def test_rejects_block_that_does_not_extend_tip(self) -> None:
         blockchain = Blockchain()
