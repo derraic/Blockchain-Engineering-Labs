@@ -25,6 +25,7 @@ class Lab3RegistrationCommunity(Community, PeerObserver):
 
         self.server_peer: Peer | None = None
         self.registration_sent = False
+        self.registration_completed = False
         self.last_registration_send_time = 0.0
         self.retry_interval_seconds = 2.0
 
@@ -57,6 +58,9 @@ class Lab3RegistrationCommunity(Community, PeerObserver):
             self.server_peer = None
 
     def try_register_blockchain(self) -> None:
+        if self.registration_completed:
+            return
+
         if self.server_peer is None:
             return
 
@@ -93,3 +97,7 @@ class Lab3RegistrationCommunity(Community, PeerObserver):
 
         if not payload.success:
             self.registration_sent = False
+            self.registration_completed = False
+            return
+
+        self.registration_completed = True

@@ -6,6 +6,7 @@ from ipv8.peerdiscovery.network import PeerObserver
 from lab3.blockchain import Blockchain
 from lab3.config import (
     BLOCKCHAIN_COMMUNITY_ID,
+    ENABLE_SERVER_HANDLERS,
     GROUP_ID,
     KEY_NAMES,
     MEMBER_KEYS,
@@ -33,9 +34,11 @@ class BlockchainCommunity(Community, PeerObserver):
 
         self.group_id = GROUP_ID
         self.member_keys = tuple(MEMBER_KEYS)
+        self.expected_teammates = tuple(key for key in self.member_keys if key != MY_KEY)
         self.member_key_set = set(self.member_keys)
         self.server_peer: Peer | None = None
         self.teammate_peers: dict[bytes, Peer] = {}
+        self.all_teammates_found_logged = False
         self.blockchain = Blockchain()
 
         self.add_message_handler(SubmitTransactionPayload, self.on_submit_transaction)
@@ -45,6 +48,13 @@ class BlockchainCommunity(Community, PeerObserver):
     def started(self) -> None:
         self.network.add_peer_observer(self)
         print(f"Blockchain community started for {MY_NAME}", flush=True)
+        if not ENABLE_SERVER_HANDLERS:
+            print("Server blockchain handlers disabled for peer discovery test", flush=True)
+        print(
+            "Looking for teammates in blockchain community: "
+            f"{', '.join(KEY_NAMES[key] for key in self.expected_teammates)}",
+            flush=True,
+        )
 
         actual_key = self.my_peer.public_key.key_to_bin()
         if actual_key != MY_KEY:
@@ -52,6 +62,14 @@ class BlockchainCommunity(Community, PeerObserver):
                 "Lab 3 key mismatch: running key does not match configured MY_KEY",
                 flush=True,
             )
+            return
+
+        self.register_task(
+            "report_peer_discovery_status",
+            self.report_peer_discovery_status,
+            interval=5.0,
+            delay=1.0,
+        )
 
     def on_peer_added(self, peer: Peer) -> None:
         key = peer.public_key.key_to_bin()
@@ -59,9 +77,24 @@ class BlockchainCommunity(Community, PeerObserver):
         if key == SERVER_PUBLIC_KEY:
             self.server_peer = peer
             print("Found server in blockchain community", flush=True)
-        elif key in TEAMMATE_KEYS:
+            return
+
+        if key in TEAMMATE_KEYS:
+            already_known = key in self.teammate_peers
             self.teammate_peers[key] = peer
-            print(f"Found teammate in blockchain community: {KEY_NAMES[key]}", flush=True)
+
+            if not already_known:
+                print(
+                    "Found teammate in blockchain community: "
+                    f"{KEY_NAMES[key]} ({key.hex()})",
+                    flush=True,
+                )
+
+            self.report_peer_discovery_status()
+            return
+
+        if key not in self.member_key_set:
+            print(f"Ignoring non-group peer: {key.hex()}", flush=True)
 
     def on_peer_removed(self, peer: Peer) -> None:
         key = peer.public_key.key_to_bin()
@@ -70,9 +103,50 @@ class BlockchainCommunity(Community, PeerObserver):
             self.server_peer = None
         elif key in self.teammate_peers:
             del self.teammate_peers[key]
+            self.all_teammates_found_logged = False
+            print(
+                f"Lost teammate in blockchain community: {KEY_NAMES[key]}",
+                flush=True,
+            )
+            self.report_peer_discovery_status()
 
     def is_server_peer(self, peer: Peer) -> bool:
         return peer.public_key.key_to_bin() == SERVER_PUBLIC_KEY
+
+    def all_teammates_ready(self) -> bool:
+        return all(key in self.teammate_peers for key in self.expected_teammates)
+
+    def missing_teammate_names(self) -> list[str]:
+        return [
+            KEY_NAMES[key]
+            for key in self.expected_teammates
+            if key not in self.teammate_peers
+        ]
+
+    def report_peer_discovery_status(self) -> None:
+        found_names = [
+            KEY_NAMES[key]
+            for key in self.expected_teammates
+            if key in self.teammate_peers
+        ]
+        missing_names = self.missing_teammate_names()
+
+        if self.all_teammates_ready():
+            if not self.all_teammates_found_logged:
+                print(
+                    "All teammates found in blockchain community: "
+                    f"{', '.join(found_names)}",
+                    flush=True,
+                )
+                self.all_teammates_found_logged = True
+            return
+
+        print(
+            "Peer discovery status: "
+            f"found={found_names or ['none']}, "
+            f"missing={missing_names or ['none']}",
+            flush=True,
+        )
 
     @lazy_wrapper(SubmitTransactionPayload)
     def on_submit_transaction(self, peer: Peer, payload: SubmitTransactionPayload) -> None:
@@ -88,15 +162,16 @@ class BlockchainCommunity(Community, PeerObserver):
         )
 
         success, tx_hash, message = self.blockchain.accept_transaction(tx)
-
-        self.ez_send(
-            peer,
-            SubmitTransactionResponsePayload(
-                success,
-                tx_hash,
-                message,
-            ),
-        )
+        
+        #self.ez_send(
+        #    peer,
+        #    SubmitTransactionResponsePayload(
+        #        success,
+        #        tx_hash,
+        #        message,
+        #    ),
+        #)
+      
 
         if success:
             print(f"Accepted transaction: {tx_hash.hex()}", flush=True)
@@ -109,14 +184,14 @@ class BlockchainCommunity(Community, PeerObserver):
         if not self.is_server_peer(peer):
             return
 
-        self.ez_send(
-            peer,
-            ChainHeightResponsePayload(
-                payload.request_id,
-                self.blockchain.height(),
-                self.blockchain.tip_hash(),
-            ),
-        )
+        #self.ez_send(
+        #    peer,
+        #    ChainHeightResponsePayload(
+        #        payload.request_id,
+        #        self.blockchain.height(),
+        #        self.blockchain.tip_hash(),
+        #    ),
+        #)
 
     @lazy_wrapper(GetBlockPayload)
     def on_get_block(self, peer: Peer, payload: GetBlockPayload) -> None:
@@ -127,16 +202,16 @@ class BlockchainCommunity(Community, PeerObserver):
         if block is None:
             return
 
-        self.ez_send(
-            peer,
-            BlockResponsePayload(
-                payload.height,
-                block.header.prev_hash,
-                block.header.txs_hash,
-                block.header.timestamp,
-                block.header.difficulty,
-                block.header.nonce,
-                block.block_hash(),
-                block.tx_hashes_bytes(),
-            ),
-        )
+        #self.ez_send(
+        #    peer,
+        #    BlockResponsePayload(
+        #        payload.height,
+        #        block.header.prev_hash,
+        #        block.header.txs_hash,
+        #        block.header.timestamp,
+        #        block.header.difficulty,
+        #        block.header.nonce,
+        #        block.block_hash(),
+        #        block.tx_hashes_bytes(),
+        #    ),
+        #)
