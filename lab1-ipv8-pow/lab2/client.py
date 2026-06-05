@@ -19,6 +19,8 @@ from lab2.config import (
     COMMUNITY_ID,
     SERVER_PUBLIC_KEY,
     MY_KEY,
+    MY_NAME,
+    GROUP_ID,
     MEMBER_KEYS,
     TEAMMATE_KEYS,
 )
@@ -82,7 +84,14 @@ class Lab2Community(Community, PeerObserver):
         my_actual_key = self.my_peer.public_key.key_to_bin()
 
         if my_actual_key != MY_KEY:
+            print(
+                f"Lab 2 key mismatch: running key does not match configured MY_KEY for {MY_NAME}",
+                flush=True,
+            )
             return
+
+        print(f"Lab 2 client started for {MY_NAME}", flush=True)
+        print(f"Configured current group id: {GROUP_ID.hex()}", flush=True)
 
         self.register_task("try_register_group", self.try_register_group, interval=0.2, delay=0.0)
         self.register_task("try_start_round", self.try_start_round, interval=0.2, delay=0.0)
@@ -156,6 +165,14 @@ class Lab2Community(Community, PeerObserver):
     def on_register_response(self, peer: Peer, payload: RegisterResponsePayload) -> None:
         if peer.public_key.key_to_bin() != SERVER_PUBLIC_KEY:
             return
+
+        print(
+            "Registration response: "
+            f"success={payload.success}, "
+            f"group_id={payload.group_id}, "
+            f"message={payload.message}",
+            flush=True,
+        )
 
         if payload.success:
             self.group_id = payload.group_id
