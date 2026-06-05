@@ -11,9 +11,9 @@ from ipv8.configuration import ConfigBuilder, Strategy, WalkerDefinition, defaul
 from ipv8.util import run_forever
 from ipv8_service import IPv8
 
-from lab3.blockchain_community import BlockchainCommunity
+from lab3.communities.blockchain import BlockchainCommunity
+from lab3.communities.registration import Lab3RegistrationCommunity
 from lab3.config import KEY_FILE
-from lab3.registration_community import Lab3RegistrationCommunity
 
 
 KEY_ALIAS = "my_peer"

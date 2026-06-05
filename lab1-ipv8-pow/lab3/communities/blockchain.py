@@ -3,7 +3,8 @@ from ipv8.lazy_community import lazy_wrapper
 from ipv8.peer import Peer
 from ipv8.peerdiscovery.network import PeerObserver
 
-from lab3.blockchain import Blockchain
+from lab3.chain.blockchain import Blockchain
+from lab3.chain.transaction import Transaction
 from lab3.config import (
     BLOCKCHAIN_COMMUNITY_ID,
     ENABLE_SERVER_HANDLERS,
@@ -23,7 +24,6 @@ from lab3.payloads import (
     SubmitTransactionPayload,
     SubmitTransactionResponsePayload,
 )
-from lab3.utils import Transaction
 
 
 class BlockchainCommunity(Community, PeerObserver):
@@ -41,9 +41,10 @@ class BlockchainCommunity(Community, PeerObserver):
         self.all_teammates_found_logged = False
         self.blockchain = Blockchain()
 
-        self.add_message_handler(SubmitTransactionPayload, self.on_submit_transaction)
-        self.add_message_handler(GetChainHeightPayload, self.on_get_chain_height)
-        self.add_message_handler(GetBlockPayload, self.on_get_block)
+        if ENABLE_SERVER_HANDLERS:
+            self.add_message_handler(SubmitTransactionPayload, self.on_submit_transaction)
+            self.add_message_handler(GetChainHeightPayload, self.on_get_chain_height)
+            self.add_message_handler(GetBlockPayload, self.on_get_block)
 
     def started(self) -> None:
         self.network.add_peer_observer(self)
@@ -162,20 +163,19 @@ class BlockchainCommunity(Community, PeerObserver):
         )
 
         success, tx_hash, message = self.blockchain.accept_transaction(tx)
-        
-        #self.ez_send(
-        #    peer,
-        #    SubmitTransactionResponsePayload(
-        #        success,
-        #        tx_hash,
-        #        message,
-        #    ),
-        #)
-      
+
+        # self.ez_send(
+        #     peer,
+        #     SubmitTransactionResponsePayload(
+        #         success,
+        #         tx_hash,
+        #         message,
+        #     ),
+        # )
 
         if success:
             print(f"Accepted transaction: {tx_hash.hex()}", flush=True)
-            print(f"Mempool size: {len(self.blockchain.mempool)}", flush=True)
+            print(f"Mempool size: {self.blockchain.mempool_size()}", flush=True)
         else:
             print(f"Rejected transaction: {message}", flush=True)
 
@@ -184,14 +184,14 @@ class BlockchainCommunity(Community, PeerObserver):
         if not self.is_server_peer(peer):
             return
 
-        #self.ez_send(
-        #    peer,
-        #    ChainHeightResponsePayload(
-        #        payload.request_id,
-        #        self.blockchain.height(),
-        #        self.blockchain.tip_hash(),
-        #    ),
-        #)
+        # self.ez_send(
+        #     peer,
+        #     ChainHeightResponsePayload(
+        #         payload.request_id,
+        #         self.blockchain.height(),
+        #         self.blockchain.tip_hash(),
+        #     ),
+        # )
 
     @lazy_wrapper(GetBlockPayload)
     def on_get_block(self, peer: Peer, payload: GetBlockPayload) -> None:
@@ -202,16 +202,16 @@ class BlockchainCommunity(Community, PeerObserver):
         if block is None:
             return
 
-        #self.ez_send(
-        #    peer,
-        #    BlockResponsePayload(
-        #        payload.height,
-        #        block.header.prev_hash,
-        #        block.header.txs_hash,
-        #        block.header.timestamp,
-        #        block.header.difficulty,
-        #        block.header.nonce,
-        #        block.block_hash(),
-        #        block.tx_hashes_bytes(),
-        #    ),
-        #)
+        # self.ez_send(
+        #     peer,
+        #     BlockResponsePayload(
+        #         payload.height,
+        #         block.header.prev_hash,
+        #         block.header.txs_hash,
+        #         block.header.timestamp,
+        #         block.header.difficulty,
+        #         block.header.nonce,
+        #         block.block_hash(),
+        #         block.tx_hashes_bytes(),
+        #     ),
+        # )

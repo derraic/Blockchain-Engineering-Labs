@@ -1,6 +1,6 @@
 import unittest
 
-from lab3.utils import (
+from lab3.chain import (
     BlockHeader,
     Transaction,
     compute_txs_hash,
