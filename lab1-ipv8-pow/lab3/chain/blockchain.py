@@ -30,11 +30,17 @@ class Blockchain:
     def add_transaction(self, tx: Transaction) -> bytes:
         return self.mempool.add(tx)
 
+    def has_transaction_in_mempool(self, tx_hash: bytes) -> bool:
+        return self.mempool.contains(tx_hash)
+
     def accept_transaction(self, tx: Transaction) -> tuple[bool, bytes, str]:
         tx_hash = tx.tx_hash()
 
         if not verify_transaction_signature(tx):
             return False, tx_hash, "Invalid transaction signature"
+
+        if self.mempool.contains(tx_hash):
+            return True, tx_hash, "Transaction already in mempool"
 
         self.mempool.add(tx)
         return True, tx_hash, "Transaction accepted into mempool"

@@ -23,6 +23,7 @@ from lab3.payloads import (
     GetChainHeightPayload,
     SubmitTransactionPayload,
     SubmitTransactionResponsePayload,
+    TransactionBroadcastPayload,
 )
 
 
@@ -45,6 +46,10 @@ class BlockchainCommunity(Community, PeerObserver):
             self.add_message_handler(SubmitTransactionPayload, self.on_submit_transaction)
             self.add_message_handler(GetChainHeightPayload, self.on_get_chain_height)
             self.add_message_handler(GetBlockPayload, self.on_get_block)
+        self.add_message_handler(
+            TransactionBroadcastPayload,
+            self.on_transaction_broadcast,
+        )
 
     def started(self) -> None:
         self.network.add_peer_observer(self)
@@ -114,6 +119,9 @@ class BlockchainCommunity(Community, PeerObserver):
     def is_server_peer(self, peer: Peer) -> bool:
         return peer.public_key.key_to_bin() == SERVER_PUBLIC_KEY
 
+    def is_teammate_peer(self, peer: Peer) -> bool:
+        return peer.public_key.key_to_bin() in TEAMMATE_KEYS
+
     def all_teammates_ready(self) -> bool:
         return all(key in self.teammate_peers for key in self.expected_teammates)
 
@@ -149,49 +157,127 @@ class BlockchainCommunity(Community, PeerObserver):
             flush=True,
         )
 
-    @lazy_wrapper(SubmitTransactionPayload)
-    def on_submit_transaction(self, peer: Peer, payload: SubmitTransactionPayload) -> None:
-        if not self.is_server_peer(peer):
-            print("Ignoring SubmitTransaction from non-server peer", flush=True)
-            return
-
-        tx = Transaction(
+    def transaction_from_payload(
+        self,
+        payload: SubmitTransactionPayload | TransactionBroadcastPayload,
+    ) -> Transaction:
+        return Transaction(
             sender_key=payload.sender_key,
             data=payload.data,
             timestamp=payload.timestamp,
             signature=payload.signature,
         )
 
+    def transaction_broadcast_payload(
+        self,
+        tx: Transaction,
+    ) -> TransactionBroadcastPayload:
+        return TransactionBroadcastPayload(
+            tx.sender_key,
+            tx.data,
+            tx.timestamp,
+            tx.signature,
+        )
+
+    def broadcast_transaction_to_teammates(
+        self,
+        tx: Transaction,
+        exclude_peer: Peer | None = None,
+    ) -> None:
+        excluded_key = (
+            exclude_peer.public_key.key_to_bin()
+            if exclude_peer is not None
+            else None
+        )
+        payload = self.transaction_broadcast_payload(tx)
+        sent_count = 0
+
+        for teammate_key, teammate_peer in self.teammate_peers.items():
+            if teammate_key == excluded_key:
+                continue
+
+            self.ez_send(teammate_peer, payload)
+            sent_count += 1
+
+        print(
+            f"Broadcast transaction {tx.tx_hash().hex()} "
+            f"to {sent_count} teammate(s)",
+            flush=True,
+        )
+
+    @lazy_wrapper(SubmitTransactionPayload)
+    def on_submit_transaction(self, peer: Peer, payload: SubmitTransactionPayload) -> None:
+        if not self.is_server_peer(peer):
+            print("Ignoring SubmitTransaction from non-server peer", flush=True)
+            return
+
+        tx = self.transaction_from_payload(payload)
+        was_known = self.blockchain.has_transaction_in_mempool(tx.tx_hash())
         success, tx_hash, message = self.blockchain.accept_transaction(tx)
 
-        # self.ez_send(
-        #     peer,
-        #     SubmitTransactionResponsePayload(
-        #         success,
-        #         tx_hash,
-        #         message,
-        #     ),
-        # )
+        self.ez_send(
+            peer,
+            SubmitTransactionResponsePayload(
+                success,
+                tx_hash,
+                message,
+            ),
+        )
 
         if success:
             print(f"Accepted transaction: {tx_hash.hex()}", flush=True)
             print(f"Mempool size: {self.blockchain.mempool_size()}", flush=True)
+            if not was_known:
+                self.broadcast_transaction_to_teammates(tx)
         else:
             print(f"Rejected transaction: {message}", flush=True)
+
+    @lazy_wrapper(TransactionBroadcastPayload)
+    def on_transaction_broadcast(
+        self,
+        peer: Peer,
+        payload: TransactionBroadcastPayload,
+    ) -> None:
+        if not self.is_teammate_peer(peer):
+            print("Ignoring transaction broadcast from non-teammate peer", flush=True)
+            return
+
+        tx = self.transaction_from_payload(payload)
+        tx_hash = tx.tx_hash()
+        was_known = self.blockchain.has_transaction_in_mempool(tx_hash)
+        success, _, message = self.blockchain.accept_transaction(tx)
+
+        if not success:
+            print(
+                f"Rejected teammate transaction {tx_hash.hex()}: {message}",
+                flush=True,
+            )
+            return
+
+        if was_known:
+            print(f"Ignoring already known transaction: {tx_hash.hex()}", flush=True)
+            return
+
+        print(
+            f"Accepted teammate transaction: {tx_hash.hex()}",
+            flush=True,
+        )
+        print(f"Mempool size: {self.blockchain.mempool_size()}", flush=True)
+        self.broadcast_transaction_to_teammates(tx, exclude_peer=peer)
 
     @lazy_wrapper(GetChainHeightPayload)
     def on_get_chain_height(self, peer: Peer, payload: GetChainHeightPayload) -> None:
         if not self.is_server_peer(peer):
             return
 
-        # self.ez_send(
-        #     peer,
-        #     ChainHeightResponsePayload(
-        #         payload.request_id,
-        #         self.blockchain.height(),
-        #         self.blockchain.tip_hash(),
-        #     ),
-        # )
+        self.ez_send(
+            peer,
+            ChainHeightResponsePayload(
+                payload.request_id,
+                self.blockchain.height(),
+                self.blockchain.tip_hash(),
+            ),
+        )
 
     @lazy_wrapper(GetBlockPayload)
     def on_get_block(self, peer: Peer, payload: GetBlockPayload) -> None:
@@ -202,16 +288,16 @@ class BlockchainCommunity(Community, PeerObserver):
         if block is None:
             return
 
-        # self.ez_send(
-        #     peer,
-        #     BlockResponsePayload(
-        #         payload.height,
-        #         block.header.prev_hash,
-        #         block.header.txs_hash,
-        #         block.header.timestamp,
-        #         block.header.difficulty,
-        #         block.header.nonce,
-        #         block.block_hash(),
-        #         block.tx_hashes_bytes(),
-        #     ),
-        # )
+        self.ez_send(
+            peer,
+            BlockResponsePayload(
+                payload.height,
+                block.header.prev_hash,
+                block.header.txs_hash,
+                block.header.timestamp,
+                block.header.difficulty,
+                block.header.nonce,
+                block.block_hash(),
+                block.tx_hashes_bytes(),
+            ),
+        )
