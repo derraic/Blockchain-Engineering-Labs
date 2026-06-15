@@ -1,14 +1,9 @@
 import unittest
 
-from lab3.chain import (
-    BlockHeader,
-    Transaction,
-    compute_txs_hash,
-    count_leading_zero_bits,
-    mine_block,
-    sha256,
-    valid_pow,
-)
+from lab3.chain.block import BlockHeader, compute_txs_hash
+from lab3.chain.bytes import sha256
+from lab3.chain.pow import count_leading_zero_bits, mine_block, valid_pow
+from lab3.chain.transaction import Transaction
 
 
 class UtilsTests(unittest.TestCase):

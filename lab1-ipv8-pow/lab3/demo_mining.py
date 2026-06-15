@@ -5,7 +5,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from lab3.chain import Blockchain, Miner, Transaction
+from lab3.chain.blockchain import Blockchain
+from lab3.chain.miner import Miner
+from lab3.chain.transaction import Transaction
 
 
 def short_hex(value: bytes, length: int = 16) -> str:

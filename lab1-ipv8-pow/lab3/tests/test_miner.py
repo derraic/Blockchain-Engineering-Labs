@@ -1,6 +1,8 @@
 import unittest
 
-from lab3.chain import Blockchain, Miner, Transaction
+from lab3.chain.blockchain import Blockchain
+from lab3.chain.miner import Miner
+from lab3.chain.transaction import Transaction
 
 
 def make_tx(data: bytes = b"data") -> Transaction:

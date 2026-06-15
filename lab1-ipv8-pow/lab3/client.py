@@ -76,6 +76,15 @@ async def main() -> None:
     if args.register and ipv8.get_overlay(Lab3RegistrationCommunity) is None:
         raise RuntimeError("Lab 3 registration overlay failed to start")
 
+    if args.register:
+        register_community: Lab3RegistrationCommunity | None = ipv8.get_overlay(
+            Lab3RegistrationCommunity,
+        )
+        if register_community is not None:
+            register_community.set_registration_gate(
+                blockchain_community.all_teammates_ready,
+            )
+
     print("IPv8 started for Lab 3", flush=True)
     print(f"Registration enabled: {args.register}", flush=True)
     print(

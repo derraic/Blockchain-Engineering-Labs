@@ -86,3 +86,56 @@ class Blockchain:
         self.remove_transactions_from_mempool(block.transactions)
 
         return True
+
+    def validate_chain(self, candidate_chain: list[Block]) -> bool:
+        if not candidate_chain:
+            return False
+
+        if candidate_chain[0].block_hash() != create_genesis_block().block_hash():
+            return False
+
+        for height, block in enumerate(candidate_chain):
+            if not block.validate():
+                return False
+
+            if height == 0:
+                continue
+
+            if not self.block_links_to_previous(block, candidate_chain[height - 1]):
+                return False
+
+        return True
+
+    def replace_chain_if_longer(self, candidate_chain: list[Block]) -> bool:
+        """
+        Atomically adopt a complete, validated longer chain.
+
+        Transactions from orphaned local blocks return to the mempool unless
+        they are also confirmed by the new canonical chain.
+        """
+        if len(candidate_chain) <= len(self.chain):
+            return False
+
+        if not self.validate_chain(candidate_chain):
+            return False
+
+        new_chain_tx_hashes = {
+            tx.tx_hash()
+            for block in candidate_chain
+            for tx in block.transactions
+        }
+        pending_transactions = {
+            tx.tx_hash(): tx
+            for tx in self.mempool.all_transactions()
+            if tx.tx_hash() not in new_chain_tx_hashes
+        }
+
+        for block in self.chain[1:]:
+            for tx in block.transactions:
+                tx_hash = tx.tx_hash()
+                if tx_hash not in new_chain_tx_hashes:
+                    pending_transactions[tx_hash] = tx
+
+        self.chain = list(candidate_chain)
+        self.mempool.replace(list(pending_transactions.values()))
+        return True

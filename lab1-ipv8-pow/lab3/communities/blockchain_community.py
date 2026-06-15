@@ -1,3 +1,5 @@
+from threading import RLock
+
 from ipv8.community import Community, CommunitySettings
 from ipv8.lazy_community import lazy_wrapper
 from ipv8.peer import Peer
@@ -9,6 +11,7 @@ from lab3.chain.transaction import Transaction
 from lab3.config import (
     BLOCKCHAIN_COMMUNITY_ID,
     ENABLE_SERVER_HANDLERS,
+    ENABLE_TRANSACTION_BROADCAST,
     GROUP_ID,
     KEY_NAMES,
     MEMBER_KEYS,
@@ -44,6 +47,7 @@ class BlockchainCommunity(Community, PeerObserver):
         self.teammate_peers: dict[bytes, Peer] = {}
         self.all_teammates_found_logged = False
         self.blockchain = Blockchain()
+        self.chain_lock = RLock()
         self.miner = Miner(self.blockchain, difficulty=MINING_DIFFICULTY)
 
         if ENABLE_SERVER_HANDLERS:
@@ -60,6 +64,8 @@ class BlockchainCommunity(Community, PeerObserver):
         print(f"Blockchain community started for {MY_NAME}", flush=True)
         if not ENABLE_SERVER_HANDLERS:
             print("Server blockchain handlers disabled for peer discovery test", flush=True)
+        if not ENABLE_TRANSACTION_BROADCAST:
+            print("Teammate transaction rebroadcast disabled", flush=True)
         print(
             "Mining enabled: "
             f"interval={MINING_INTERVAL_SECONDS}s, difficulty={MINING_DIFFICULTY}",
@@ -174,7 +180,14 @@ class BlockchainCommunity(Community, PeerObserver):
         )
 
     async def mine_next_block(self) -> None:
-        result = await self.miner.mine_next_block_threaded()
+        if not self.all_teammates_ready():
+            print("Skipping mining until all teammates are found", flush=True)
+            return
+
+        result = await self.miner.mine_next_block_threaded(
+            create_job=self.create_mining_job_locked,
+            append_block=self.append_mined_block_locked,
+        )
         if result is None:
             return
 
@@ -191,9 +204,21 @@ class BlockchainCommunity(Community, PeerObserver):
             f"height={result.new_height}, "
             f"hash={result.block.block_hash().hex()}, "
             f"txs={result.transaction_count}, "
-            f"mempool={self.blockchain.mempool_size()}",
+            f"mempool={self.mempool_size_locked()}",
             flush=True,
         )
+
+    def create_mining_job_locked(self):
+        with self.chain_lock:
+            return self.miner.create_job()
+
+    def append_mined_block_locked(self, job, block):
+        with self.chain_lock:
+            return self.miner.append_mined_block(job, block)
+
+    def mempool_size_locked(self) -> int:
+        with self.chain_lock:
+            return self.blockchain.mempool_size()
 
     def transaction_from_payload(
         self,
@@ -217,11 +242,29 @@ class BlockchainCommunity(Community, PeerObserver):
             tx.signature,
         )
 
+    def print_transaction(self, label: str, tx: Transaction) -> None:
+        print(
+            f"{label}: "
+            f"hash={tx.tx_hash().hex()}, "
+            f"sender_key={tx.sender_key.hex()}, "
+            f"data={tx.data!r}, "
+            f"timestamp={tx.timestamp}, "
+            f"signature={tx.signature.hex()}",
+            flush=True,
+        )
+
     def broadcast_transaction_to_teammates(
         self,
         tx: Transaction,
         exclude_peer: Peer | None = None,
     ) -> None:
+        if not ENABLE_TRANSACTION_BROADCAST:
+            print(
+                f"Skipping teammate transaction broadcast: {tx.tx_hash().hex()}",
+                flush=True,
+            )
+            return
+
         excluded_key = (
             exclude_peer.public_key.key_to_bin()
             if exclude_peer is not None
@@ -250,9 +293,18 @@ class BlockchainCommunity(Community, PeerObserver):
             return
 
         tx = self.transaction_from_payload(payload)
-        was_known = self.blockchain.has_transaction_in_mempool(tx.tx_hash())
-        success, tx_hash, message = self.blockchain.accept_transaction(tx)
+        self.print_transaction("Received server SubmitTransaction", tx)
 
+        with self.chain_lock:
+            was_known = self.blockchain.has_transaction_in_mempool(tx.tx_hash())
+            success, tx_hash, message = self.blockchain.accept_transaction(tx)
+            mempool_size = self.blockchain.mempool_size()
+
+        print(
+            "Sending SubmitTransactionResponse to server: "
+            f"success={success}, tx_hash={tx_hash.hex()}, message={message}",
+            flush=True,
+        )
         self.ez_send(
             peer,
             SubmitTransactionResponsePayload(
@@ -264,7 +316,7 @@ class BlockchainCommunity(Community, PeerObserver):
 
         if success:
             print(f"Accepted transaction: {tx_hash.hex()}", flush=True)
-            print(f"Mempool size: {self.blockchain.mempool_size()}", flush=True)
+            print(f"Mempool size: {mempool_size}", flush=True)
             if not was_known:
                 self.broadcast_transaction_to_teammates(tx)
         else:
@@ -282,8 +334,15 @@ class BlockchainCommunity(Community, PeerObserver):
 
         tx = self.transaction_from_payload(payload)
         tx_hash = tx.tx_hash()
-        was_known = self.blockchain.has_transaction_in_mempool(tx_hash)
-        success, _, message = self.blockchain.accept_transaction(tx)
+        self.print_transaction(
+            f"Received teammate TransactionBroadcast from {KEY_NAMES[peer.public_key.key_to_bin()]}",
+            tx,
+        )
+
+        with self.chain_lock:
+            was_known = self.blockchain.has_transaction_in_mempool(tx_hash)
+            success, _, message = self.blockchain.accept_transaction(tx)
+            mempool_size = self.blockchain.mempool_size()
 
         if not success:
             print(
@@ -300,7 +359,7 @@ class BlockchainCommunity(Community, PeerObserver):
             f"Accepted teammate transaction: {tx_hash.hex()}",
             flush=True,
         )
-        print(f"Mempool size: {self.blockchain.mempool_size()}", flush=True)
+        print(f"Mempool size: {mempool_size}", flush=True)
         self.broadcast_transaction_to_teammates(tx, exclude_peer=peer)
 
     @lazy_wrapper(GetChainHeightPayload)
@@ -308,12 +367,22 @@ class BlockchainCommunity(Community, PeerObserver):
         if not self.is_server_peer(peer):
             return
 
+        with self.chain_lock:
+            height = self.blockchain.height()
+            tip_hash = self.blockchain.tip_hash()
+
+        print(
+            "Received server GetChainHeight: "
+            f"request_id={payload.request_id}; "
+            f"responding height={height}, tip_hash={tip_hash.hex()}",
+            flush=True,
+        )
         self.ez_send(
             peer,
             ChainHeightResponsePayload(
                 payload.request_id,
-                self.blockchain.height(),
-                self.blockchain.tip_hash(),
+                height,
+                tip_hash,
             ),
         )
 
@@ -322,10 +391,22 @@ class BlockchainCommunity(Community, PeerObserver):
         if not self.is_server_peer(peer):
             return
 
-        block = self.blockchain.get_block(payload.height)
+        with self.chain_lock:
+            block = self.blockchain.get_block(payload.height)
         if block is None:
+            print(
+                f"Received server GetBlock height={payload.height}; block not found",
+                flush=True,
+            )
             return
 
+        print(
+            "Received server GetBlock: "
+            f"height={payload.height}; "
+            f"responding block_hash={block.block_hash().hex()}, "
+            f"tx_count={len(block.transactions)}",
+            flush=True,
+        )
         self.ez_send(
             peer,
             BlockResponsePayload(

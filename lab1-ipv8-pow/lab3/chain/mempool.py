@@ -36,5 +36,11 @@ class Mempool:
         for tx in transactions:
             self.remove(tx.tx_hash())
 
+    def replace(self, transactions: list[Transaction]) -> None:
+        self.transactions = {
+            tx.tx_hash(): tx
+            for tx in transactions
+        }
+
     def __len__(self) -> int:
         return len(self.transactions)

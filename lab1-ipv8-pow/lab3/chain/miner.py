@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
 from time import time
 
@@ -47,6 +48,8 @@ class Miner:
     async def mine_next_block_threaded(
         self,
         timestamp: int | None = None,
+        create_job: Callable[[], MiningJob] | None = None,
+        append_block: Callable[[MiningJob, Block], MiningResult] | None = None,
     ) -> MiningResult | None:
         if self.is_mining:
             return None
@@ -54,8 +57,10 @@ class Miner:
         self.is_mining = True
 
         try:
-            job = self.create_job(timestamp)
+            job = create_job() if create_job is not None else self.create_job(timestamp)
             block = await asyncio.to_thread(self.mine_job, job)
+            if append_block is not None:
+                return append_block(job, block)
             return self.append_mined_block(job, block)
         finally:
             self.is_mining = False

@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from time import monotonic
 
 from ipv8.community import Community, CommunitySettings
@@ -26,8 +27,10 @@ class Lab3RegistrationCommunity(Community, PeerObserver):
         self.server_peer: Peer | None = None
         self.registration_sent = False
         self.registration_completed = False
+        self.registration_waiting_logged = False
         self.last_registration_send_time = 0.0
         self.retry_interval_seconds = 2.0
+        self.can_register: Callable[[], bool] = lambda: False
 
         self.add_message_handler(
             RegisterBlockchainResponsePayload,
@@ -47,6 +50,9 @@ class Lab3RegistrationCommunity(Community, PeerObserver):
             delay=0.0,
         )
 
+    def set_registration_gate(self, can_register: Callable[[], bool]) -> None:
+        self.can_register = can_register
+
     def on_peer_added(self, peer: Peer) -> None:
         if peer.public_key.key_to_bin() == SERVER_PUBLIC_KEY:
             self.server_peer = peer
@@ -62,6 +68,15 @@ class Lab3RegistrationCommunity(Community, PeerObserver):
             return
 
         if self.server_peer is None:
+            return
+
+        if not self.can_register():
+            if not self.registration_waiting_logged:
+                print(
+                    "Waiting to register blockchain until all teammates are found",
+                    flush=True,
+                )
+                self.registration_waiting_logged = True
             return
 
         now = monotonic()

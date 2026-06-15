@@ -65,14 +65,16 @@ class BlockResponsePayload(VariablePayload):
     ]
     format_list = ["q", "varlenH", "varlenH", "q", "q", "q", "varlenH", "varlenH"]
 
+
 @vp_compile
 class TransactionBroadcastPayload(VariablePayload):
     msg_id = 7
     names = ["sender_key", "data", "timestamp", "signature"]
     format_list = ["varlenH", "varlenH", "q", "varlenH"]
 
+
 @vp_compile
-class BlockResponsePayload(VariablePayload):
+class PeerBlockResponsePayload(VariablePayload):
     msg_id = 8
     names = [
         "height",
